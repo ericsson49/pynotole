@@ -4,12 +4,7 @@ import ast
 import astor
 
 from pynotole.rewrite import AstRewriting
-
-
-def parse_stmt(s):
-    stmts = ast.parse(s).body
-    assert len(stmts) == 1
-    return stmts[0]
+from utils.pyast_utils import parse_stmt
 
 
 class AstRewritingTestCase(unittest.TestCase):
