@@ -4,7 +4,7 @@ import unittest
 
 from pynotole.cfg import CFGBuilder, DummyBlock, IndexingLabelFactory
 from pynotole.graph import *
-from pynotole.var_range_splitter import split_var_ranges
+from pynotole.live_range_splitting import split_var_ranges
 
 from utils.graph_utils import *
 from utils.ssa_utils import *
