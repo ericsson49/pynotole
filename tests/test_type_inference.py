@@ -4,11 +4,7 @@ import ast
 import astor
 
 from pynotole.type_inference.inference import infer_types_with_mypy, infer_variable_types
-
-
-def parse(s):
-    return ast.parse(s).body
-
+from utils.pyast_utils import parse_stmts as parse
 
 def to_src(stmts):
     assert isinstance(stmts, list)

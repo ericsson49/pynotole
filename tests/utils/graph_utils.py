@@ -4,15 +4,7 @@ from pynotole.cfg import *
 from pynotole.ssa import *
 from pynotole.graph import *
 
-
-def parse_stmts(code: str) -> list[ast.stmt]:
-    return ast.parse(code).body
-
-
-def parse_stmt(code: str) -> ast.stmt:
-    stmts = parse_stmts(code)
-    assert len(stmts) == 1
-    return stmts[0]
+from .pyast_utils import parse_stmt, parse_stmts
 
 
 @dataclass(eq=True, frozen=True)
