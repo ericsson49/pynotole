@@ -3,12 +3,20 @@ import unittest
 import ast
 import astor
 
+from toolz.dicttoolz import valmap
+from typing import Collection
 from pynotole.type_inference.inference import infer_types_with_mypy, infer_variable_types
 from utils.pyast_utils import parse_stmts as parse
 
 def to_src(stmts):
     assert isinstance(stmts, list)
     return astor.to_source(ast.Module(stmts))
+
+def convert_types_to_str(type_envs: Collection[dict[str, ast.expr]]) -> Collection[dict[str, str]]:
+    res = []
+    for types in type_envs:
+        res.append(valmap(lambda ty: astor.to_source(ty, pretty_string=lambda x: x).rstrip(), types))
+    return res
 
 class TypeInferenceTestCase(unittest.TestCase):
     def compare_stmt(self, s1, s2, orig):
@@ -37,7 +45,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 def f(a: int):
     b = a
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'b': 'int'}, var_types)
 
     def test_if_int_str(self):
@@ -48,7 +56,7 @@ def f(a: int):
     else:
         c = ''
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'c': 'object'}, var_types)
 
     def test_if_int_bool(self):
@@ -59,7 +67,7 @@ def f(a: int):
     else:
         c = True
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'c': 'int'}, var_types)
 
     def test_if_int_bool_str(self):
@@ -72,7 +80,7 @@ def f(a: int):
     else:
         c = ''
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'c': 'object'}, var_types)
 
     def test_if_ann_assign(self):
@@ -86,7 +94,7 @@ def f(a: int):
         c_2 = c_1
     b = c_2
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'c_1': 'bool', 'c_2': 'int', 'b': 'int'}, var_types)
 
     def test_while(self):
@@ -97,7 +105,7 @@ def f(n: int):
         a = a + 1
         n = n - 1
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'a': 'int', 'n': 'int'}, var_types)
 
     def test_while_ssa(self):
@@ -112,7 +120,7 @@ def f(n: int):
         a_1 = a_2
         n_1 = n_2
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'a': 'bool', 'a_1': 'int', 'a_2': 'int', 'n_1': 'int', 'n_2': 'int'}, var_types)
 
     def test_for(self):
@@ -122,7 +130,7 @@ def f(n: int):
     for i in range(n):
         a = a + i
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'a': 'int', 'i': 'int'}, var_types)
 
     def test_for_ssa(self):
@@ -134,7 +142,7 @@ def f(n: int):
         a_2 = a_1 + 1
         a_1 = a_2
 ''')
-        var_types, = infer_variable_types(stmts).values()
+        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
         self.assertEqual({'a': 'bool', 'a_1': 'int', 'a_2': 'int', 'i': 'int'}, var_types)
 
 

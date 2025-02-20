@@ -65,7 +65,11 @@ def _post_process_type_str(s):
                 assert False
 
     ty = convert(ast.parse(s, mode='eval').body)
-    return ''.join(astor.to_source(ty, pretty_string=lambda x: x)).rstrip()
+    return ty
+
+
+def mypy_type_to_py(ty: types.Type) -> ast.expr:
+    return _post_process_type_str(type_to_str(ty))
 
 
 def gather_var_types(res):
@@ -109,7 +113,7 @@ def gather_var_types(res):
 
             if var_types:
                 result[func.name] = valmap(
-                    lambda vals: _post_process_type_str(type_to_str(join_type_list([v for k,v in vals]))),
+                    lambda vals: mypy_type_to_py(join_type_list([v for k,v in vals])),
                     groupby(0, var_types))
     return result
 
@@ -170,7 +174,7 @@ def infer_types_with_mypy(module_defs, mypy_path=None):
         if func.name in func_var_types:
             annotated_vars = _gather_ann_assigns(func.body)
             typed_var_defs = [
-                ast.AnnAssign(ast.Name(v, ast.Store()), ast.parse(ty, mode='eval').body, None, 1)
+                ast.AnnAssign(ast.Name(v, ast.Store()), ty, None, 1)
                 for v, ty in func_var_types[func.name].items() if v not in annotated_vars
             ]
             return replace_func_body(func, prepend_stmts(typed_var_defs, func.body))
