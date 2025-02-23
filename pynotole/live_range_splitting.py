@@ -5,6 +5,7 @@ from toolz.dicttoolz import valmap
 from .cfg import CFGBuilder, IndexingLabelFactory, PyASTBBlockFactory
 from .ssa import make_SSA, calc_SSA_info, rename_blocks
 from .ast_utils import replace_func_body
+from .unionfind import UnionFind
 
 
 def split_var_ranges(f: ast.FunctionDef) -> ast.FunctionDef:
@@ -86,30 +87,12 @@ def split_var_ranges(f: ast.FunctionDef) -> ast.FunctionDef:
 
 
 def get_phi_webs(phis):
-    rep = {}
-    phi_webs = {}
-    def find(v):
-        if v in rep:
-            return rep[v]
-        else:
-            rep[v] = v
-            phi_webs[v] = {v}
-            return v
-    def unify(vs):
-        vs = list(vs)
-        v = vs[0]
-        v_ = find(v)
-        for v2 in vs[1:]:
-            v2_ = find(v2)
-            if v_ != v2_:
-                for vl in phi_webs[v2_]:
-                    rep[vl] = v_
-                    phi_webs[v_].add(vl)
-                del phi_webs[v2_]
+    uf = UnionFind()
     for phi_funcs in phis.values():
         for phi in phi_funcs:
-            unify(set(phi.uses.values()) | {phi.vdef})
-    return phi_webs
+            for use in phi.uses.values():
+                uf.union(phi.vdef, use)
+    return uf.components()
 
 
 def split_var_ranges2(f: ast.FunctionDef) -> ast.FunctionDef:
@@ -119,7 +102,7 @@ def split_var_ranges2(f: ast.FunctionDef) -> ast.FunctionDef:
     phi_webs = get_phi_webs(phi_funcs)
 
     remap = {}
-    for vs in phi_webs.values():
+    for vs in phi_webs:
         v = min(vs, key=lambda v: (len(v), v))
         for v_ in vs:
             remap[v_] = v
