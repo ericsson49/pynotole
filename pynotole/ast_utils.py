@@ -8,8 +8,13 @@ def get_arg_names(args: ast.arguments):
     return [arg.arg for arg in args.args]
 
 
-def replace_func_body(f: ast.FunctionDef, body_: list[ast.stmt]) -> ast.FunctionDef:
-    return ast.FunctionDef(f.name, f.args, body_, f.decorator_list, f.returns)
+def update_func(f: ast.FunctionDef, **kwargs):
+    name = kwargs['name'] if 'name' in kwargs else f.name
+    args = kwargs['args'] if 'args' in kwargs else f.args
+    body = kwargs['body'] if 'body' in kwargs else f.body
+    decorator_list = kwargs['decorator_list'] if 'decorator_list' in kwargs else f.decorator_list
+    returns = kwargs['returns'] if 'returns' in kwargs else f.returns
+    return ast.FunctionDef(name, args, body, decorator_list, returns)
 
 
 def process_funcs(defs: list[ast.stmt], processor) -> list[ast.stmt]:

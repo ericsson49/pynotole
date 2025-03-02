@@ -11,7 +11,7 @@ from toolz.dicttoolz import valmap
 
 from .mypy_helper import call_mypy
 from .. import fail_if
-from ..ast_utils import replace_func_body, process_funcs
+from ..ast_utils import process_funcs, update_func
 
 
 def parse_fq_type_name(ty: ast.Attribute):
@@ -177,7 +177,7 @@ def infer_types_with_mypy(module_defs, mypy_path=None):
                 ast.AnnAssign(ast.Name(v, ast.Store()), ty, None, 1)
                 for v, ty in func_var_types[func.name].items() if v not in annotated_vars
             ]
-            return replace_func_body(func, prepend_stmts(typed_var_defs, func.body))
+            return update_func(func, body=prepend_stmts(typed_var_defs, func.body))
         else:
             return func
 

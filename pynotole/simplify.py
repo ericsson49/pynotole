@@ -1,7 +1,7 @@
 import ast
 from functools import partial
 from .rewrite import AstRewriting, rewrite
-from .ast_utils import replace_func_body
+from .ast_utils import update_func
 
 
 def simplify_ast_rule(fvs, s):
@@ -213,4 +213,4 @@ def simplify_stmt(n: ast.stmt | list[ast.stmt]):
 
 def simplify_func(f: ast.FunctionDef) -> ast.FunctionDef:
     body_ = simplify_stmt(f.body)
-    return replace_func_body(f, body_)
+    return update_func(f, body=body_)

@@ -4,7 +4,7 @@ from toolz.dicttoolz import valmap
 
 from .cfg import CFGBuilder, IndexingLabelFactory, PyASTBBlockFactory
 from .ssa import make_SSA, calc_SSA_info, rename_blocks
-from .ast_utils import replace_func_body
+from .ast_utils import update_func
 from .unionfind import UnionFind
 
 
@@ -83,7 +83,7 @@ def split_var_ranges(f: ast.FunctionDef) -> ast.FunctionDef:
         return res
 
     body_ = process_stmts((), f.body)
-    return replace_func_body(f, body_)
+    return update_func(f, body=body_)
 
 
 def get_phi_webs(phis):
@@ -169,5 +169,5 @@ def split_var_ranges2(f: ast.FunctionDef) -> ast.FunctionDef:
         return res
 
     body_ = process_stmts((), f.body)
-    return replace_func_body(f, body_)
+    return update_func(f, body=body_)
 
