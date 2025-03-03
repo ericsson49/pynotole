@@ -4,6 +4,7 @@ from typing import Callable, Sequence, Tuple, TypeVar
 import ast
 import astor
 
+from pynotole.ast_utils import update_func
 
 _T = TypeVar('_T')
 _Strategy = Callable[[_T], _T|None]
@@ -112,6 +113,10 @@ class AstRewriting(Rewriting):
                         stmts__ = _flatten([r1] + r2)
                         if not cls._compare_seq([stmt] + stmts, stmts__):
                             return stmts__
+                case ast.FunctionDef() as f:
+                    body_ = res(f.body)
+                    if body_ is not None:
+                        return update_func(f, body=body_)
                 case ast.If(test, body, orelse):
                     body_ = res(body)
                     orelse_ = res(orelse)
