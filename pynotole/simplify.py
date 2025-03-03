@@ -198,9 +198,13 @@ def simplify_ast_rule(fvs, s):
 class FreshVars:
     def __init__(self):
         self.tmps = set()
+        self.counts = {}
 
     def fresh(self, prefix: str = 'tmp') -> str:
-        fv = prefix + str(len(self.tmps))
+        curr = self.counts.get(prefix, 0)
+        fv = f'{prefix}{curr}'
+        self.counts[prefix] = curr + 1
+        assert fv not in self.tmps
         self.tmps.add(fv)
         return fv
 
