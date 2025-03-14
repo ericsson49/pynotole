@@ -41,37 +41,37 @@ class TypeInferenceTestCase(unittest.TestCase):
 
 
     def test_assign(self):
-        stmts = parse('''
+        code ='''
 def f(a: int):
     b = a
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'b': 'int'}, var_types)
 
     def test_if_int_str(self):
-        stmts = parse('''
+        code = '''
 def f(a: int):
     if a:
         c = 1
     else:
         c = ''
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'c': 'object'}, var_types)
 
     def test_if_int_bool(self):
-        stmts = parse('''
+        code = '''
 def f(a: int):
     if a:
         c = 1
     else:
         c = True
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'c': 'int'}, var_types)
 
     def test_if_int_bool_str(self):
-        stmts = parse('''
+        code = '''
 def f(a: int):
     if a == 0:
         c = 1
@@ -79,12 +79,12 @@ def f(a: int):
         c = True
     else:
         c = ''
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'c': 'object'}, var_types)
 
     def test_if_ann_assign(self):
-        stmts = parse('''
+        code = '''
 def f(a: int):
     if a:
         c: int = 1
@@ -93,23 +93,23 @@ def f(a: int):
         c_1 = True
         c_2 = c_1
     b = c_2
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'c_1': 'bool', 'c_2': 'int', 'b': 'int'}, var_types)
 
     def test_while(self):
-        stmts = parse('''
+        code = '''
 def f(n: int):
     a = 0
     while n:
         a = a + 1
         n = n - 1
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'a': 'int', 'n': 'int'}, var_types)
 
     def test_while_ssa(self):
-        stmts = parse('''
+        code = '''
 def f(n: int):
     a = False
     a_1 = a
@@ -119,32 +119,54 @@ def f(n: int):
         n_2 = n_1 - 1
         a_1 = a_2
         n_1 = n_2
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'a': 'bool', 'a_1': 'int', 'a_2': 'int', 'n_1': 'int', 'n_2': 'int'}, var_types)
 
     def test_for(self):
-        stmts = parse('''
+        code ='''
 def f(n: int):
     a = True
     for i in range(n):
         a = a + i
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'a': 'int', 'i': 'int'}, var_types)
 
     def test_for_ssa(self):
-        stmts = parse('''
+        code = '''
 def f(n: int):
     a = False
     a_1 = a
     for i in range(n):
         a_2 = a_1 + 1
         a_1 = a_2
-''')
-        var_types, = convert_types_to_str(infer_variable_types(stmts).values())
+'''
+        var_types, = convert_types_to_str(infer_variable_types(code).values())
         self.assertEqual({'a': 'bool', 'a_1': 'int', 'a_2': 'int', 'i': 'int'}, var_types)
 
+    def test_lambda(self):
+        code = '''
+from typing import Callable
+def f(a: Callable[[int], int], b: int) -> int:
+    return a(b)
+
+def g() -> None:
+    f(lambda x: x + f(lambda y: y * 2, 1), 0)
+'''
+        expected = '''
+from typing import Callable
+def f(a: Callable[[int], int], b: int) -> int:
+    return a(b)
+
+def g() -> None:
+    lam1: Callable[[int], int] = lambda y: y * 2
+    lam0: Callable[[int], int] = lambda x: x + f(lam1, 1)
+    f(lam0, 0)
+        '''
+
+        mod_defs = infer_types_with_mypy(code)
+        self.assertEqual(to_src(parse(expected)), to_src(mod_defs))
 
 
 if __name__ == '__main__':

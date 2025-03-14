@@ -9,9 +9,10 @@ from mypy import types
 from toolz.itertoolz import mapcat, groupby
 from toolz.dicttoolz import valmap
 
-from .mypy_helper import call_mypy
+from .mypy_helper import call_mypy, deconstruct
 from .. import fail_if
-from ..ast_utils import process_funcs, update_func
+from ..ast_utils import process_funcs, update_func, deconstruct_expr
+from ..simplify import FreshVars
 
 
 def parse_fq_type_name(ty: ast.Attribute):
@@ -39,8 +40,8 @@ def type_to_str(t) -> str:
             return 'Any'
         case types.TupleType() as tpl:
             return f"tuple[{', '.join(type_to_str(i) for i in tpl.items)}]"
-        # case types.CallableType() as callable:
-        #     return f"Callable[[{', '.join(type_to_str(i) for i in callable.arg_types)}], {type_to_str(callable.ret_type)}]"
+        case types.CallableType() as callable:
+            return f"Callable[[{', '.join(type_to_str(i) for i in callable.arg_types)}], {type_to_str(callable.ret_type)}]"
     assert False
 
 
@@ -61,6 +62,8 @@ def _post_process_type_str(s):
                 return ast.Subscript(convert(value), ast.Tuple([convert(elt) for elt in elts]))
             case ast.Subscript(value, slice):
                 return ast.Subscript(convert(value), convert(slice))
+            case ast.List(elems):
+                return ast.List([convert(elem) for elem in elems])
             case _:
                 assert False
 
@@ -70,6 +73,41 @@ def _post_process_type_str(s):
 
 def mypy_type_to_py(ty: types.Type) -> ast.expr:
     return _post_process_type_str(type_to_str(ty))
+
+
+def gather_lambdas(e: nodes.Expression) -> list[nodes.LambdaExpr]:
+    res = []
+    if isinstance(e, nodes.LambdaExpr):
+        res.append(e)
+        res.extend(mapcat(gather_lambdas, gather_exprs_in_stmt(e.body)))
+    else:
+        res.extend(mapcat(gather_lambdas, deconstruct(e)))
+    return res
+
+
+def gather_exprs_in_stmt(n: nodes.Node) -> list[nodes.Expression]:
+    if isinstance(n, nodes.Block):
+        return list(mapcat(gather_exprs_in_stmt, n.body))
+    elif isinstance(n, nodes.IfStmt):
+        exprs = [n.expr] + list(mapcat(gather_exprs_in_stmt, n.body))
+        if n.else_body is not None:
+            exprs += gather_exprs_in_stmt(n.else_body)
+        return exprs
+    elif isinstance(n, nodes.WhileStmt):
+        assert n.else_body is None
+        return [n.expr] + list(mapcat(gather_exprs_in_stmt, n.body))
+    elif isinstance(n, nodes.ForStmt):
+        assert n.else_body is None
+        return [n.expr] + list(mapcat(gather_exprs_in_stmt, n.body))
+    elif isinstance(n, nodes.ReturnStmt):
+        if n.expr is not None:
+            return [n.expr]
+        else:
+            return []
+    elif isinstance(n, nodes.ExpressionStmt):
+        return [n.expr]
+    else:
+        assert False
 
 
 def gather_var_types(res):
@@ -118,6 +156,16 @@ def gather_var_types(res):
     return result
 
 
+def gather_all_lambdas(build_result) -> list[nodes.LambdaExpr]:
+    result = []
+    for d in build_result.files['__main__'].defs:
+        if isinstance(d, (nodes.FuncDef, nodes.Decorator)):
+            func = d.func if isinstance(d, nodes.Decorator) else d
+            exprs = gather_exprs_in_stmt(func.body)
+            result.extend(mapcat(gather_lambdas, exprs))
+    return result
+
+
 def select_errors(errs, suffix):
     res = []
     for err in errs:
@@ -154,10 +202,13 @@ def invoke_mypy(code, mypy_path):
     return res
 
 
-def infer_variable_types(module_defs, mypy_path=None):
-    code = astor.to_source(ast.Module(module_defs))
+def infer_variable_types(code, mypy_path=None, gather_lambdas=False):
     res = invoke_mypy(code, mypy_path=mypy_path)
-    return gather_var_types(res)
+    var_types = gather_var_types(res)
+    if gather_lambdas:
+        return var_types, gather_all_lambdas(res)
+    else:
+        return var_types
 
 
 def prepend_stmts(defs: list[ast.stmt], body: list[ast.stmt]) -> list[ast.stmt]:
@@ -167,8 +218,48 @@ def prepend_stmts(defs: list[ast.stmt], body: list[ast.stmt]) -> list[ast.stmt]:
         case _:
             return defs + body
 
-def infer_types_with_mypy(module_defs, mypy_path=None):
-    func_var_types = infer_variable_types(module_defs, mypy_path)
+
+def infer_types_with_mypy(code, mypy_path=None):
+    res = invoke_mypy(code, mypy_path=mypy_path)
+    func_var_types = gather_var_types(res)
+    lambda_map = {(lam.line, lam.column): lam for lam in gather_all_lambdas(res)}
+
+    module_defs = ast.parse(code).body
+
+    fresh_vars = FreshVars()
+
+    def process_lambdas(f: ast.FunctionDef) -> ast.FunctionDef:
+        lambdas = []
+
+        def process_expr(e: ast.expr):
+            if isinstance(e, ast.Name):
+                return e
+            elif isinstance(e, ast.Lambda):
+                typ = mypy_type_to_py(res.types[lambda_map[(e.lineno, e.col_offset)]])
+                v = fresh_vars.fresh('lam')
+                lam_ = ast.Lambda(e.args, process_expr(e.body))
+                lambdas.append(ast.AnnAssign(ast.Name(v, ast.Store()), typ, lam_, 1))
+                return ast.Name(v, ast.Load())
+            else:
+                sub_exprs, builder = deconstruct_expr(e)
+                sub_exprs_ = list(map(process_expr, sub_exprs))
+                return builder(sub_exprs_)
+
+        def process(s: ast.stmt | list[ast.stmt]):
+            match s:
+                case [*stmts]:
+                    return list(map(process, stmts))
+                case ast.Expr(value):
+                    return ast.Expr(process_expr(value))
+                case ast.Return(None):
+                    return s
+                case ast.Return(value):
+                    return ast.Return(process_expr(value))
+                case _:
+                    assert False
+
+        body_ = process(f.body)
+        return update_func(f, body=prepend_stmts(lambdas, body_))
 
     def prepend_var_defs(func: ast.FunctionDef) -> ast.FunctionDef:
         if func.name in func_var_types:
@@ -181,7 +272,7 @@ def infer_types_with_mypy(module_defs, mypy_path=None):
         else:
             return func
 
-    res_defs = process_funcs(module_defs, prepend_var_defs)
+    res_defs = process_funcs(module_defs, lambda f: process_lambdas(prepend_var_defs(f)))
     return res_defs
 
 
