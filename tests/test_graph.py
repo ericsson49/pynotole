@@ -484,6 +484,19 @@ class AstStmtRenamerTestCase(unittest.TestCase):
         self.check_equal(parse_stmt('a: int = b'), AstStmtRenamer.rename_uses(parse_stmt('a: int = b'), {'a': 'a0'}))
         self.check_equal(parse_stmt('a: int = b0'), AstStmtRenamer.rename_uses(parse_stmt('a: int = b'), {'b': 'b0'}))
 
+        self.check_equal(parse_stmt('a.f = b0'), AstStmtRenamer.rename_uses(parse_stmt('a.f = b'), {'b': 'b0'}))
+        self.check_equal(parse_stmt('a0.f = b'), AstStmtRenamer.rename_uses(parse_stmt('a.f = b'), {'a': 'a0'}))
+
+        self.check_equal(parse_stmt('a[i] = b0'), AstStmtRenamer.rename_uses(parse_stmt('a[i] = b'), {'b': 'b0'}))
+        self.check_equal(parse_stmt('a0[i] = b'), AstStmtRenamer.rename_uses(parse_stmt('a[i] = b'), {'a': 'a0'}))
+        self.check_equal(parse_stmt('a[i0] = b'), AstStmtRenamer.rename_uses(parse_stmt('a[i] = b'), {'i': 'i0'}))
+
+        self.check_equal(parse_stmt('a, b = b0, a'), AstStmtRenamer.rename_uses(parse_stmt('a, b = b, a'), {'b': 'b0'}))
+        self.check_equal(parse_stmt('a, b = b, a0'), AstStmtRenamer.rename_uses(parse_stmt('a, b = b, a'), {'a': 'a0'}))
+        self.check_equal(parse_stmt('a0.f, b = b, a0'), AstStmtRenamer.rename_uses(parse_stmt('a.f, b = b, a'), {'a': 'a0'}))
+        self.check_equal(parse_stmt('a.f, b0[i] = b0[i], a'), AstStmtRenamer.rename_uses(parse_stmt('a.f, b[i] = b[i], a'), {'b': 'b0'}))
+        self.check_equal(parse_stmt('a.f, b[i0] = b[i0], a'), AstStmtRenamer.rename_uses(parse_stmt('a.f, b[i] = b[i], a'), {'i': 'i0'}))
+
     def test_rename_defs(self):
         self.check_equal(parse_stmt('assert 1'), AstStmtRenamer.rename_defs(parse_stmt('assert 1'), {'a': 'a0'}))
         self.check_equal(parse_stmt('assert a'), AstStmtRenamer.rename_defs(parse_stmt('assert a'), {'a': 'a0'}))

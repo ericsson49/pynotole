@@ -5,7 +5,7 @@ from toolz.dicttoolz import dissoc
 from typing import Any, Collection, Iterable, Generic, Mapping, Never, TypeAlias, TypeVar, Union
 
 from .graph import Graph
-from .ast_utils import deconstruct_expr, get_arg_names
+from .ast_utils import deconstruct_expr, extract_load_exprs_from_stmt, get_arg_names
 
 
 AST = TypeVar('AST')
@@ -340,31 +340,9 @@ class AstStmtRenamer(InstructionRenamer[ast.stmt]):
 
     @classmethod
     def rename_uses(cls, instr: ast.stmt, var_map: Mapping[str, str]) -> ast.stmt:
-        def rename_in_targets(e: ast.expr):
-            match e:
-                case ast.Name():
-                    return e
-                case ast.Attribute(v, attr):
-                    return ast.Attribute(_rename_uses(v, var_map), attr)
-                case ast.Subscript(v, idx) if not isinstance(idx, (ast.slice, ast.Tuple)):
-                    return ast.Subscript(_rename_uses(v, var_map), _rename_uses(idx, var_map))
-                case ast.Tuple(elts):
-                    return ast.Tuple([_rename_uses(e, var_map) for e in elts])
-                case _:
-                    assert False
-        match instr:
-            case ast.Assert(test, None):
-                return ast.Assert(_rename_uses(test, var_map), None)
-            case ast.Expr(value):
-                return ast.Expr(_rename_uses(value, var_map))
-            case ast.Assign([target], value):
-                return ast.Assign([rename_in_targets(target)], _rename_uses(value, var_map))
-            case ast.AnnAssign(ast.Name() as target, anno, None, is_simple):
-                return instr
-            case ast.AnnAssign(ast.Name() as target, anno, value, is_simple):
-                return ast.AnnAssign(target, anno, _rename_uses(value, var_map), is_simple)
-            case _:
-                assert False, instr
+        exprs, builder = extract_load_exprs_from_stmt(instr)
+        exprs_ = [_rename_uses(e, var_map) for e in exprs]
+        return builder(exprs_)
 
 
 class PyASTBBlockFactory(BBlockFactory[PyAST]):

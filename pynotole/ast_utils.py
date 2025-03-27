@@ -94,3 +94,42 @@ def _extract_generator_exp_attrs(e: ast.expr):
         case _:
             assert False
 
+
+def extract_load_exprs_from_stmt(s: ast.stmt):
+    match s:
+        case ast.Assert(test, None):
+            return [test], lambda exprs: ast.Assert(exprs[0], None)
+        case ast.Assert(test, msg):
+            return [test, msg], lambda exprs: ast.Assert(exprs[0], exprs[1])
+        case ast.Expr(value):
+            return [value], lambda exprs: ast.Expr(exprs[0])
+        case ast.Assign([ast.Name()], None) | ast.AnnAssign(ast.Name(), _, None):
+            return [], lambda _: s
+        case ast.Assign([ast.Tuple(elts)], value):
+            elt_sub_exprs, elt_builders = [], []
+            for elt in elts:
+                sub_exprs, builder = deconstruct_expr(elt)
+                elt_sub_exprs.append(sub_exprs)
+                elt_builders.append(builder)
+            def builder(exprs):
+                curr_exprs = exprs
+                elts_ = []
+                for i, b in enumerate(elt_builders):
+                    sub_exprs = curr_exprs[:len(elt_sub_exprs[i])]
+                    curr_exprs = curr_exprs[len(elt_sub_exprs[i]):]
+                    elts_.append(b(sub_exprs))
+                return ast.Assign([ast.Tuple(elts_, ast.Load())], curr_exprs[0])
+            return [*concat(elt_sub_exprs), value], builder
+        case ast.Assign([target], value):
+            target_sub_exprs, target_builder = deconstruct_expr(target)
+            return [*target_sub_exprs, value], lambda exprs: ast.Assign([target_builder(exprs[:-1])], exprs[-1])
+        case ast.AnnAssign(target, anno, value, is_simple):
+            target_sub_exprs, target_builder = deconstruct_expr(target)
+            return [*target_sub_exprs, value], lambda exprs: ast.AnnAssign(target_builder(exprs[:-1]), anno, exprs[-1], is_simple)
+        case ast.If(test, body, orelse):
+            return [test], lambda exprs: ast.If(exprs[0], body, orelse)
+        case ast.While(test, body, orelse):
+            return [test], lambda exprs: ast.While(exprs[0], body, orelse)
+        case _:
+            assert False
+
