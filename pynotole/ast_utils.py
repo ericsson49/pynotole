@@ -95,6 +95,26 @@ def _extract_generator_exp_attrs(e: ast.expr):
             assert False
 
 
+def _deconstruct_target(target):
+    if isinstance(target, ast.Tuple):
+        elt_sub_exprs, elt_builders = [], []
+        for elt in target.elts:
+            sub_exprs, elt_builder = _deconstruct_target(elt)
+            elt_sub_exprs.append(sub_exprs)
+            elt_builders.append(elt_builder)
+        def builder(exprs):
+            curr_exprs = exprs
+            elts_ = []
+            for i, b in enumerate(elt_builders):
+                sub_exprs = curr_exprs[:len(elt_sub_exprs[i])]
+                curr_exprs = curr_exprs[len(elt_sub_exprs[i]):]
+                elts_.append(b(sub_exprs))
+            return ast.Tuple(elts_, ast.Load())
+        return list(concat(elt_sub_exprs)), builder
+    else:
+        return deconstruct_expr(target)
+
+
 def extract_load_exprs_from_stmt(s: ast.stmt):
     match s:
         case ast.Assert(test, None):
@@ -103,26 +123,12 @@ def extract_load_exprs_from_stmt(s: ast.stmt):
             return [test, msg], lambda exprs: ast.Assert(exprs[0], exprs[1])
         case ast.Expr(value):
             return [value], lambda exprs: ast.Expr(exprs[0])
-        case ast.Assign([ast.Name()], None) | ast.AnnAssign(ast.Name(), _, None):
-            return [], lambda _: s
-        case ast.Assign([ast.Tuple(elts)], value):
-            elt_sub_exprs, elt_builders = [], []
-            for elt in elts:
-                sub_exprs, builder = deconstruct_expr(elt)
-                elt_sub_exprs.append(sub_exprs)
-                elt_builders.append(builder)
-            def builder(exprs):
-                curr_exprs = exprs
-                elts_ = []
-                for i, b in enumerate(elt_builders):
-                    sub_exprs = curr_exprs[:len(elt_sub_exprs[i])]
-                    curr_exprs = curr_exprs[len(elt_sub_exprs[i]):]
-                    elts_.append(b(sub_exprs))
-                return ast.Assign([ast.Tuple(elts_, ast.Load())], curr_exprs[0])
-            return [*concat(elt_sub_exprs), value], builder
         case ast.Assign([target], value):
+            sub_exprs, builder = _deconstruct_target(target)
+            return [*sub_exprs, value], lambda exprs: ast.Assign([builder(exprs[:len(sub_exprs)])], exprs[len(sub_exprs)])
+        case ast.AnnAssign(target, anno, None, is_simple):
             target_sub_exprs, target_builder = deconstruct_expr(target)
-            return [*target_sub_exprs, value], lambda exprs: ast.Assign([target_builder(exprs[:-1])], exprs[-1])
+            return target_sub_exprs, lambda exprs: ast.AnnAssign(target_builder(exprs), anno, None, is_simple)
         case ast.AnnAssign(target, anno, value, is_simple):
             target_sub_exprs, target_builder = deconstruct_expr(target)
             return [*target_sub_exprs, value], lambda exprs: ast.AnnAssign(target_builder(exprs[:-1]), anno, exprs[-1], is_simple)
